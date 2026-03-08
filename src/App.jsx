@@ -191,6 +191,7 @@ function App() {
   const [overtimeEnd, setOvertimeEnd] = useState('18:00')
   const [deductionHours, setDeductionHours] = useState(0)
   const [timeValidationError, setTimeValidationError] = useState('')
+  const [workMode, setWorkMode] = useState('weekday') // 'weekday' | 'weekend'
 
   const dateKey = useMemo(
     () => format(selectedDate, 'yyyy-MM-dd'),
@@ -211,6 +212,7 @@ function App() {
     const saved = savedByDate[key]
     if (saved) {
       setSkipRecord(!!saved.skipRecord)
+      setWorkMode(saved.workMode ?? 'weekday')
       setPreWorkOvertime(saved.preWorkOvertime ?? false)
       setOvertimeStart(saved.overtimeStart ?? '09:00')
       setDefaultStart(saved.defaultStart ?? '09:00')
@@ -222,6 +224,7 @@ function App() {
           (saved.deductionMinutes != null ? saved.deductionMinutes / 60 : 0)
       )
     } else {
+      setWorkMode('weekday')
       const defStartMin = timeToMinutes(defaults.defaultStart)
       const defEndMin = timeToMinutes(defaults.defaultEnd)
       const dayMinutes = 24 * 60
@@ -243,8 +246,9 @@ function App() {
     setTimeValidationError('')
   }
 
-  /** 시간 유효성: 시간외 출근 < 기본 출근, 시간외 퇴근 > 기본 퇴근 */
+  /** 시간 유효성: 주중만 검사. 시간외 출근 < 기본 출근, 시간외 퇴근 > 기본 퇴근 */
   const validateTimes = () => {
+    if (workMode === 'weekend') return true
     if (preWorkOvertime) {
       if (timeToMinutes(overtimeStart) >= timeToMinutes(defaultStart)) {
         return false
@@ -260,6 +264,13 @@ function App() {
 
   const computeTotalMinutes = () => {
     if (skipRecord) return 0
+    const deductionMin = (Number(deductionHours) || 0) * 60
+    if (workMode === 'weekend') {
+      const startM = timeToMinutes(overtimeStart)
+      const endM = timeToMinutes(overtimeEnd)
+      const span = endM >= startM ? endM - startM : endM + 24 * 60 - startM
+      return Math.max(0, span - deductionMin)
+    }
     let morning = 0
     if (preWorkOvertime) {
       morning = Math.max(
@@ -274,7 +285,6 @@ function App() {
         timeToMinutes(overtimeEnd) - timeToMinutes(defaultEnd)
       )
     }
-    const deductionMin = (Number(deductionHours) || 0) * 60
     return Math.max(0, morning + afternoon - deductionMin)
   }
 
@@ -300,6 +310,7 @@ function App() {
       ...prev,
       [dateKey]: {
         skipRecord: false,
+        workMode,
         preWorkOvertime,
         overtimeStart,
         defaultStart,
@@ -330,6 +341,15 @@ function App() {
   const hasRecord = (date) => {
     const key = format(date, 'yyyy-MM-dd')
     return savedByDate[key] != null
+  }
+
+  /** 'skip' = 시간외 안함, 'overtime' = 시간외 근무 기록, null = 기록 없음 */
+  const getRecordStyle = (date) => {
+    const key = format(date, 'yyyy-MM-dd')
+    const data = savedByDate[key]
+    if (!data) return null
+    if (data.skipRecord) return 'skip'
+    return 'overtime'
   }
 
   const openSettings = () => {
@@ -424,17 +444,32 @@ function App() {
             }
             showNeighboringMonth={false}
             className="mx-auto overtimer-calendar border-0 w-full"
-            tileClassName={({ date }) =>
-              hasRecord(date) ? 'react-calendar__tile--hasRecord' : null
-            }
-            tileContent={({ date }) =>
-              hasRecord(date) ? (
-                <span
-                  className="block w-1.5 h-1.5 rounded-full bg-blue-400 mx-auto mt-0.5"
-                  aria-hidden
-                />
-              ) : null
-            }
+            tileClassName={({ date }) => {
+              const style = getRecordStyle(date)
+              if (style === 'skip') return 'react-calendar__tile--hasRecordSkip'
+              if (style === 'overtime') return 'react-calendar__tile--hasRecord'
+              return null
+            }}
+            tileContent={({ date }) => {
+              const style = getRecordStyle(date)
+              if (style === 'skip') {
+                return (
+                  <span
+                    className="block w-1.5 h-1.5 rounded-full bg-red-500 mx-auto mt-0.5"
+                    aria-hidden
+                  />
+                )
+              }
+              if (style === 'overtime') {
+                return (
+                  <span
+                    className="block w-1.5 h-1.5 rounded-full bg-blue-400 mx-auto mt-0.5"
+                    aria-hidden
+                  />
+                )
+              }
+              return null
+            }}
           />
         </div>
       </main>
@@ -460,6 +495,33 @@ function App() {
               <h2 className="text-xl font-semibold text-neutral-800">
                 시간외 근무 입력 — {dateKey}
               </h2>
+              {/* 주중 / 주말 모드 탭 */}
+              <div className="flex mt-4 rounded-xl bg-neutral-100 p-1">
+                <button
+                  type="button"
+                  onClick={() => setWorkMode('weekday')}
+                  disabled={skipRecord}
+                  className={`flex-1 min-h-[44px] rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${
+                    workMode === 'weekday'
+                      ? 'bg-white text-neutral-800 shadow'
+                      : 'text-neutral-600 hover:text-neutral-800'
+                  }`}
+                >
+                  주중(기본)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWorkMode('weekend')}
+                  disabled={skipRecord}
+                  className={`flex-1 min-h-[44px] rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${
+                    workMode === 'weekend'
+                      ? 'bg-white text-neutral-800 shadow'
+                      : 'text-neutral-600 hover:text-neutral-800'
+                  }`}
+                >
+                  주말(자율)
+                </button>
+              </div>
             </div>
 
             <div className="overflow-y-auto flex-1 px-6 py-5 flex flex-col gap-5">
@@ -479,6 +541,55 @@ function App() {
               </div>
 
               <div className="flex flex-col gap-5 border-t border-neutral-100 pt-5">
+                {workMode === 'weekend' ? (
+                  <>
+                    <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
+                      <span className="text-xs font-medium text-neutral-500 uppercase tracking-wide block mb-1">시각</span>
+                      <span className="text-sm text-neutral-600 block mb-2">시작 시각</span>
+                      <TimeSelect
+                        value={overtimeStart}
+                        onChange={(v) => {
+                          setOvertimeStart(v)
+                          setTimeValidationError('')
+                        }}
+                        disabled={skipRecord}
+                      />
+                    </div>
+                    <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
+                      <span className="text-xs font-medium text-neutral-500 uppercase tracking-wide block mb-1">시각</span>
+                      <span className="text-sm text-neutral-600 block mb-2">종료 시각</span>
+                      <TimeSelect
+                        value={overtimeEnd}
+                        onChange={(v) => {
+                          setOvertimeEnd(v)
+                          setTimeValidationError('')
+                        }}
+                        disabled={skipRecord}
+                      />
+                    </div>
+                    <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
+                      <span className="text-xs font-medium text-neutral-500 uppercase tracking-wide block mb-1">시간</span>
+                      <span className="text-sm text-neutral-600 block mb-2">공제 시간 (1시간 단위)</span>
+                      <DeductionStepper
+                        value={deductionHours}
+                        onChange={setDeductionHours}
+                        disabled={skipRecord}
+                      />
+                    </div>
+                    <div className="pt-4 mt-2 border-t border-neutral-200">
+                      <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-1">이번 날 합산 (시간)</p>
+                      <p className="text-xl font-semibold text-blue-600">
+                        {skipRecord ? '—' : minutesToDuration(computeTotalMinutes())}
+                      </p>
+                    </div>
+                    {timeValidationError && (
+                      <p className="text-sm text-red-600 font-medium text-center py-2 rounded-xl bg-red-50 border border-red-200" role="alert">
+                        {timeValidationError}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <>
                 {/* 출근 전 시간외 */}
                 <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
                   <label className="flex items-center gap-2 mb-3">
@@ -590,6 +701,8 @@ function App() {
                   <p className="text-sm text-red-600 font-medium text-center py-2 rounded-xl bg-red-50 border border-red-200" role="alert">
                     {timeValidationError}
                   </p>
+                )}
+                  </>
                 )}
               </div>
             </div>

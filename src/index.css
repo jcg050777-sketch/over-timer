@@ -1,7 +1,7 @@
 @import "tailwindcss";
 @import "react-calendar/dist/Calendar.css";
 
-/* 기록된 날짜: 연한 파란 배경 + 작은 점 */
+/* 기록된 날짜: 연한 파란 배경 + 작은 점 (시간외 근무) */
 .overtimer-calendar .react-calendar__tile--hasRecord {
   background-color: rgb(239 246 255);
   border-radius: 9999px;
@@ -9,4 +9,14 @@
 .overtimer-calendar .react-calendar__tile--hasRecord:enabled:hover,
 .overtimer-calendar .react-calendar__tile--hasRecord:enabled:focus {
   background-color: rgb(219 234 254);
+}
+
+/* 오늘 시간외 안함으로 저장한 날: 연한 빨간 배경 + 빨간 점 */
+.overtimer-calendar .react-calendar__tile--hasRecordSkip {
+  background-color: rgb(254 226 226);
+  border-radius: 9999px;
+}
+.overtimer-calendar .react-calendar__tile--hasRecordSkip:enabled:hover,
+.overtimer-calendar .react-calendar__tile--hasRecordSkip:enabled:focus {
+  background-color: rgb(254 202 202);
 }
