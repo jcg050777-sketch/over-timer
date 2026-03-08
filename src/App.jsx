@@ -6,6 +6,42 @@ import { format, getMonth, getYear, startOfMonth } from 'date-fns'
 const STORAGE_KEY = 'overtimer-saved'
 const DEFAULTS_STORAGE_KEY = 'overtimer-defaults'
 
+/** 해당 날짜가 토·일 또는 한국 공휴일이면 true */
+function isWeekendOrHoliday(date) {
+  const d = new Date(date)
+  const day = d.getDay()
+  if (day === 0 || day === 6) return true // 일요일, 토요일
+
+  const y = d.getFullYear()
+  const key = format(d, 'yyyy-MM-dd')
+
+  const solar = [
+    `${y}-01-01`, // 신정
+    `${y}-03-01`, // 삼일절
+    `${y}-05-05`, // 어린이날
+    `${y}-06-06`, // 현충일
+    `${y}-08-15`, // 광복절
+    `${y}-10-03`, // 개천절
+    `${y}-10-09`, // 한글날
+    `${y}-12-25`, // 성탄절
+  ]
+
+  const lunarByYear = {
+    2024: ['2024-02-09', '2024-02-10', '2024-02-11', '2024-02-12', '2024-05-15', '2024-09-16', '2024-09-17', '2024-09-18'],
+    2025: ['2025-01-28', '2025-01-29', '2025-01-30', '2025-05-05', '2025-10-05', '2025-10-06', '2025-10-07'],
+    2026: ['2026-02-16', '2026-02-17', '2026-02-18', '2026-05-24', '2026-09-24', '2026-09-25', '2026-09-26'],
+    2027: ['2027-02-06', '2027-02-07', '2027-02-08', '2027-05-12', '2027-09-14', '2027-09-15', '2027-09-16'],
+    2028: ['2028-01-26', '2028-01-27', '2028-01-28', '2028-05-02', '2028-10-02', '2028-10-03', '2028-10-04'],
+    2029: ['2029-02-12', '2029-02-13', '2029-02-14', '2029-05-21', '2029-09-21', '2029-09-22', '2029-09-23'],
+    2030: ['2030-02-02', '2030-02-03', '2030-02-04', '2030-05-10', '2030-10-11', '2030-10-12', '2030-10-13'],
+  }
+
+  if (solar.includes(key)) return true
+  const lunar = lunarByYear[y]
+  if (lunar && lunar.includes(key)) return true
+  return false
+}
+
 /** "HH:mm" → 자정 기준 분 */
 function timeToMinutes(timeStr) {
   if (!timeStr) return 0
@@ -224,18 +260,30 @@ function App() {
           (saved.deductionMinutes != null ? saved.deductionMinutes / 60 : 0)
       )
     } else {
-      setWorkMode('weekday')
-      const defStartMin = timeToMinutes(defaults.defaultStart)
-      const defEndMin = timeToMinutes(defaults.defaultEnd)
-      const dayMinutes = 24 * 60
-      setSkipRecord(false)
-      setPreWorkOvertime(false)
-      setOvertimeStart(minutesToTimeStr((defStartMin - 60 + dayMinutes) % dayMinutes))
-      setDefaultStart(defaults.defaultStart)
-      setDefaultEnd(defaults.defaultEnd)
-      setPostWorkOvertime(false)
-      setOvertimeEnd(minutesToTimeStr((defEndMin + 60) % dayMinutes))
-      setDeductionHours(defaults.deductionHours)
+      const isWeekend = isWeekendOrHoliday(date)
+      setWorkMode(isWeekend ? 'weekend' : 'weekday')
+      if (isWeekend) {
+        setSkipRecord(true)
+        setPreWorkOvertime(false)
+        setOvertimeStart(defaults.defaultStart)
+        setDefaultStart(defaults.defaultStart)
+        setDefaultEnd(defaults.defaultEnd)
+        setPostWorkOvertime(false)
+        setOvertimeEnd(defaults.defaultEnd)
+        setDeductionHours(defaults.deductionHours)
+      } else {
+        const defStartMin = timeToMinutes(defaults.defaultStart)
+        const defEndMin = timeToMinutes(defaults.defaultEnd)
+        const dayMinutes = 24 * 60
+        setSkipRecord(false)
+        setPreWorkOvertime(false)
+        setOvertimeStart(minutesToTimeStr((defStartMin - 60 + dayMinutes) % dayMinutes))
+        setDefaultStart(defaults.defaultStart)
+        setDefaultEnd(defaults.defaultEnd)
+        setPostWorkOvertime(false)
+        setOvertimeEnd(minutesToTimeStr((defEndMin + 60) % dayMinutes))
+        setDeductionHours(defaults.deductionHours)
+      }
     }
     setTimeValidationError('')
     setModalOpen(true)
@@ -343,12 +391,13 @@ function App() {
     return savedByDate[key] != null
   }
 
-  /** 'skip' = 시간외 안함, 'overtime' = 시간외 근무 기록, null = 기록 없음 */
+  /** 'skip' = 빨간 표시(시간외 안함 또는 총 0시간), 'overtime' = 파란 표시, null = 기록 없음 */
   const getRecordStyle = (date) => {
     const key = format(date, 'yyyy-MM-dd')
     const data = savedByDate[key]
     if (!data) return null
     if (data.skipRecord) return 'skip'
+    if ((data.totalMinutes ?? 0) === 0) return 'skip'
     return 'overtime'
   }
 
